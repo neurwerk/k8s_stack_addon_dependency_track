@@ -4,7 +4,7 @@ metadata:
   name: dependency-track
 spec:
   version: 0.1.0
-  status: staged
+  status: ready
   sourceName: dependency-track-addon
   configurationKey: dependencyTrack
   inputs:
@@ -43,7 +43,7 @@ spec:
       package: database
       baseChart: charts/postgres/addon
   artifacts:
-    - {id: tooling, role: product, image: 'ghcr.io/neurwerk/k8s-stack-addon-dependency-track-tooling:0.1.0'}
+    - {id: tooling, role: product, image: 'ghcr.io/neurwerk/k8s-stack-addon-dependency-track-tooling:0.1.0@sha256:b9edc892705c04297ea61d0c9ee0fef8d775d1513d89e1033a06659dd2dca59a'}
     - {id: api, role: native, image: 'ghcr.io/dependencytrack/apiserver:5.2.2@sha256:cd5bed12ff30fd36980dbee2d6c3b177c37b99c63b60f5a5b15fbca0b31d0f38'}
     - {id: frontend, role: native, image: 'ghcr.io/dependencytrack/frontend:5.2.2@sha256:fd15b6cdc38692518a703eab0ed2867fa34e1276034cbe00773c61a9975cf719'}
     - {id: syft, role: native, image: 'ghcr.io/anchore/syft:v1.57.2-debug@sha256:f0368b2eb2177250966df45efbd34aa6e9809539ebd391e99eb3bed448564ebb'}
