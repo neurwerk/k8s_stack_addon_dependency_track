@@ -126,6 +126,8 @@ spec:
           image: {{ $dt.frontendImage | quote }}
           # Upstream renders runtime configuration into its web root at startup.
           securityContext:
+            runAsUser: 101
+            runAsGroup: 101
             allowPrivilegeEscalation: false
             capabilities: {drop: [ALL]}
           ports: [{name: http, containerPort: 8080}]

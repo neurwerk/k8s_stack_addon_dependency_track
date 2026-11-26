@@ -2,5 +2,5 @@ apiVersion: v2
 name: dependency-track
 description: Dependency-Track API, frontend and local credential initialization
 type: application
-version: 0.1.1
+version: 0.1.2
 appVersion: "5.2.2"
