@@ -108,13 +108,12 @@ spec:
                 {{- end }}
             - name: syft
               image: {{ $scan.syftImage | quote }}
-              command: [/bin/sh, /work/payloads/scan-images.sh]
+              command: [/busybox/sh, /work/payloads/scan-images.sh]
               securityContext: *security
               resources: {{ toJson $scan.resources }}
               env:
                 - {name: HOME, value: /tmp}
                 - {name: SYFT_CHECK_FOR_APP_UPDATE, value: "false"}
-                - {name: SYFT_REGISTRY_AUTH_AUTHORITY, value: ""}
                 {{- if $scan.registrySecret }}
                 - {name: DOCKER_CONFIG, value: /registry}
                 {{- end }}
