@@ -1,0 +1,12 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dependency-track-postgres-password
+  namespace: infra-postgres-operations
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {name: infra-postgres-operations-openbao-secret-store, kind: SecretStore}
+  target: {name: dependency-track-postgres-password, creationPolicy: Owner, deletionPolicy: Retain}
+  data:
+    - secretKey: password
+      remoteRef: {key: addons/dependency-track/database, property: dbPassword}

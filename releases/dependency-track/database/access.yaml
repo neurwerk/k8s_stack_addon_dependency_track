@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dependency-track-postgres-access
+  namespace: infra-postgres-operations
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: postgres-operations}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: dependency-track}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: dependency-track, app.kubernetes.io/component: api}
+      ports: [{protocol: TCP, port: 9712}]

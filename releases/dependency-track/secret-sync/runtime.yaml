@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dependency-track-external-secrets
+  namespace: dependency-track
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: dependency-track-openbao-secret-store
+  namespace: dependency-track
+spec:
+  provider:
+    vault:
+      server: https://infra-openbao.infra-openbao.svc:8200
+      path: secret
+      version: v2
+      caProvider:
+        type: ConfigMap
+        name: infra-openbao-ca-bundle
+        key: ca.crt
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: addon-dependency-track-runtime
+          serviceAccountRef:
+            name: dependency-track-external-secrets
+            audiences: [openbao]
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dependency-track-database
+  namespace: dependency-track
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {name: dependency-track-openbao-secret-store, kind: SecretStore}
+  target: {name: dependency-track-database, creationPolicy: Owner, deletionPolicy: Retain}
+  data:
+    - secretKey: dbPassword
+      remoteRef: {key: addons/dependency-track/database, property: dbPassword}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dependency-track-runtime
+  namespace: dependency-track
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {name: dependency-track-openbao-secret-store, kind: SecretStore}
+  target: {name: dependency-track-runtime, creationPolicy: Owner, deletionPolicy: Retain}
+  data:
+    - secretKey: kek
+      remoteRef: {key: addons/dependency-track/runtime, property: kek}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dependency-track-admin
+  namespace: dependency-track
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {name: dependency-track-openbao-secret-store, kind: SecretStore}
+  target: {name: dependency-track-admin, creationPolicy: Owner, deletionPolicy: Retain}
+  data:
+    - secretKey: adminPassword
+      remoteRef: {key: addons/dependency-track/admin, property: adminPassword}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dependency-track-collector
+  namespace: dependency-track
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {name: dependency-track-openbao-secret-store, kind: SecretStore}
+  target: {name: dependency-track-collector, creationPolicy: Owner, deletionPolicy: Retain}
+  data:
+    - secretKey: collectorPassword
+      remoteRef: {key: addons/dependency-track/collector, property: collectorPassword}

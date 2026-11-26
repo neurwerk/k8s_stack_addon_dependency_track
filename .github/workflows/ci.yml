@@ -1,0 +1,39 @@
+name: CI
+on:
+  workflow_call:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+env:
+  BASE_REF: 3f517f697e3234dc589c7748b8f8b0b4524b9e44
+jobs:
+  validate:
+    name: Required CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with: {version: "0.12.7", enable-cache: true}
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with: {version: v4.2.4}
+      - uses: supplypike/setup-bin@8e3f88b4f143d9b5c3497f0fc12d45c83c123787 # v4.0.1
+        with:
+          uri: https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz
+          name: kustomize
+          version: v5.8.1
+      - uses: supplypike/setup-bin@8e3f88b4f143d9b5c3497f0fc12d45c83c123787 # v4.0.1
+        with:
+          uri: https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          name: kubeconform
+          version: 0.8.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: neurwerk/k8s_stack_base
+          ref: ${{ env.BASE_REF }}
+          path: .ci/base
+      - run: make check BASE_REPO="$GITHUB_WORKSPACE/.ci/base"
+      - name: Build tooling without publication
+        run: make tooling-build VERSION=0.1.0 REVISION="$GITHUB_SHA"

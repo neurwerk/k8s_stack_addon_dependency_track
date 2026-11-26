@@ -1,0 +1,89 @@
+{{- if .Values.dependencyTrack.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dependency-track
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: dependency-track}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: dependency-track}
+      ports: [{protocol: TCP, port: 8080}]
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: traefik}
+      ports: [{protocol: TCP, port: 8080}]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: dependency-track}
+      ports: [{protocol: TCP, port: 8080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dependency-track-database
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: dependency-track, app.kubernetes.io/component: api}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: infra-postgres-operations}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.dependencyTrack.networkPolicy.postgresPodSelector | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.dependencyTrack.networkPolicy.postgresPodPort }}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dependency-track-external
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: dependency-track}
+    matchExpressions:
+      - {key: app.kubernetes.io/component, operator: In, values: [api, collector]}
+  policyTypes: [Egress]
+  egress:
+    # Registries, source archives, package metadata and vulnerability feeds.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 127.0.0.0/8]
+      ports: [{protocol: TCP, port: 443}]
+{{- if and .Values.dependencyTrack.collection.enabled .Values.dependencyTrack.collection.discoverRunningImages }}
+{{- if not .Values.dependencyTrack.collection.kubernetesApiCidrs }}
+{{- fail "Running-image discovery requires explicit collection.kubernetesApiCidrs" }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dependency-track-image-discovery
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: dependency-track, app.kubernetes.io/component: collector}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range .Values.dependencyTrack.collection.kubernetesApiCidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.dependencyTrack.collection.kubernetesApiPort }}}
+{{- end }}
+{{- end }}

@@ -1,0 +1,108 @@
+apiVersion: addons.neurwerk.com/v1alpha2
+kind: AddonRelease
+metadata:
+  name: dependency-track
+spec:
+  version: 0.1.0
+  status: staged
+  sourceName: dependency-track-addon
+  configurationKey: dependencyTrack
+  inputs:
+    - {kind: ConfigMap, namespace: dependency-track, name: client-values, owner: client}
+    - {kind: ConfigMap, namespace: dependency-track, name: dependency-track-product-values, owner: client}
+  prerequisites:
+    base: 0.3.34
+    tooling: 0.18.3
+    stackSetup: 0.8.6
+    baseCharts: [charts/postgres/addon]
+    baseChartVersions:
+      charts/postgres/addon: 0.1.3
+  packages:
+    - name: namespaces
+      path: releases/namespaces/dependency-track
+    - name: secret-sync
+      path: releases/dependency-track/secret-sync
+      dependsOn: [namespaces]
+    - name: database
+      path: releases/dependency-track/database
+      dependsOn: [secret-sync]
+    - name: app
+      path: releases/dependency-track/app
+      dependsOn: [database, secret-sync]
+    - name: routing
+      path: releases/dependency-track/routing
+      dependsOn: [app]
+  retention: {databases: retain, volumes: retain, credentials: retain}
+  databases:
+    - id: database
+      service: {namespace: infra-postgres-operations, name: postgres-operations}
+      engine: postgresql
+      database: dependency_track
+      role: dependency_track
+      owner: dependency-track
+      package: database
+      baseChart: charts/postgres/addon
+  artifacts:
+    - {id: tooling, role: product, image: 'ghcr.io/neurwerk/k8s-stack-addon-dependency-track-tooling:0.1.0'}
+    - {id: api, role: native, image: 'ghcr.io/dependencytrack/apiserver:5.2.2@sha256:cd5bed12ff30fd36980dbee2d6c3b177c37b99c63b60f5a5b15fbca0b31d0f38'}
+    - {id: frontend, role: native, image: 'ghcr.io/dependencytrack/frontend:5.2.2@sha256:fd15b6cdc38692518a703eab0ed2867fa34e1276034cbe00773c61a9975cf719'}
+    - {id: syft, role: native, image: 'ghcr.io/anchore/syft:v1.57.2-debug@sha256:f0368b2eb2177250966df45efbd34aa6e9809539ebd391e99eb3bed448564ebb'}
+    - {id: cdxgen, role: native, image: 'ghcr.io/cyclonedx/cdxgen:13.3.0@sha256:0e2eef6dbc92a91d037531e7e3d8190f396d84d7bf0c1029807fbdebcb53a4c8'}
+    - {id: database-provisioner, role: native, image: 'ghcr.io/documentdb/documentdb/documentdb-local:pg18-0.116.0@sha256:01bb9408393fb6417cc32735f4566dee4b53bbab6df6b70c42797317da631f12'}
+  consumers:
+    - {artifact: tooling, package: app, kind: HelmRelease, namespace: dependency-track, name: dependency-track, container: bootstrap}
+    - {artifact: tooling, package: app, kind: HelmRelease, namespace: dependency-track, name: dependency-track, container: stage, location: initContainers, optional: true}
+    - {artifact: tooling, package: app, kind: HelmRelease, namespace: dependency-track, name: dependency-track, container: prepare, location: initContainers, optional: true}
+    - {artifact: tooling, package: app, kind: HelmRelease, namespace: dependency-track, name: dependency-track, container: upload, optional: true}
+    - {artifact: api, package: app, kind: HelmRelease, namespace: dependency-track, name: dependency-track, container: api}
+    - {artifact: frontend, package: app, kind: HelmRelease, namespace: dependency-track, name: dependency-track, container: frontend}
+    - {artifact: syft, package: app, kind: HelmRelease, namespace: dependency-track, name: dependency-track, container: syft, location: initContainers, optional: true}
+    - {artifact: cdxgen, package: app, kind: HelmRelease, namespace: dependency-track, name: dependency-track, container: cdxgen, location: initContainers, optional: true}
+    - {artifact: database-provisioner, package: database, kind: HelmRelease, namespace: infra-postgres-operations, name: dependency-track-postgres, container: provision}
+  setup:
+    records:
+      - id: database
+        path: addons/dependency-track/database
+        fields:
+          dbPassword:
+            generate: {encoding: base64url, bytes: 32}
+            validation: {format: base64url, minLength: 43, maxLength: 43}
+      - id: runtime
+        path: addons/dependency-track/runtime
+        fields:
+          kek:
+            generate: {encoding: base64, bytes: 32}
+            validation: {format: base64, minLength: 44, maxLength: 44}
+      - id: admin
+        path: addons/dependency-track/admin
+        fields:
+          adminPassword:
+            generate: {encoding: base64url, bytes: 32}
+            validation: {format: base64url, minLength: 43, maxLength: 43}
+      - id: collector
+        path: addons/dependency-track/collector
+        fields:
+          collectorPassword:
+            generate: {encoding: base64url, bytes: 32}
+            validation: {format: base64url, minLength: 43, maxLength: 43}
+    readers:
+      - role: addon-dependency-track-runtime
+        namespace: dependency-track
+        serviceAccount: dependency-track-external-secrets
+        audience: openbao
+        records: [database, runtime, admin, collector]
+      - role: infra-postgres-operations
+        namespace: infra-postgres-operations
+        serviceAccount: infra-postgres-operations-external-secrets
+        audience: openbao
+        records: [database]
+    deliveries:
+      - {namespace: dependency-track, name: dependency-track-database, secretStore: dependency-track-openbao-secret-store, targetSecret: dependency-track-database, records: [database]}
+      - {namespace: dependency-track, name: dependency-track-runtime, secretStore: dependency-track-openbao-secret-store, targetSecret: dependency-track-runtime, records: [runtime]}
+      - {namespace: dependency-track, name: dependency-track-admin, secretStore: dependency-track-openbao-secret-store, targetSecret: dependency-track-admin, records: [admin]}
+      - {namespace: dependency-track, name: dependency-track-collector, secretStore: dependency-track-openbao-secret-store, targetSecret: dependency-track-collector, records: [collector]}
+      - {namespace: infra-postgres-operations, name: dependency-track-postgres-password, secretStore: infra-postgres-operations-openbao-secret-store, targetSecret: dependency-track-postgres-password, records: [database]}
+    handover:
+      - id: administrator
+        label: Dependency-Track local administrator (admin)
+        value: {record: admin, field: adminPassword}

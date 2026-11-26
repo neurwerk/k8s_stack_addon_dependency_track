@@ -1,0 +1,24 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: dependency-track-routing
+  namespace: dependency-track
+spec:
+  interval: 5m
+  timeout: 10m
+  install:
+    strategy: {name: RetryOnFailure, retryInterval: 1m}
+  upgrade:
+    strategy: {name: RetryOnFailure, retryInterval: 1m}
+  dependsOn:
+    - {name: dependency-track, namespace: dependency-track}
+    - {name: cert-manager-issuers, namespace: infra-cert-manager}
+    - {name: cert-manager-approver-policy, namespace: infra-cert-manager}
+  chart:
+    spec:
+      chart: ./charts/dependency-track/routing
+      sourceRef: {kind: GitRepository, name: dependency-track-addon, namespace: flux-system}
+      interval: 1m
+  valuesFrom:
+    - {kind: ConfigMap, name: client-values, valuesKey: values.yaml}
+    - {kind: ConfigMap, name: dependency-track-product-values, valuesKey: values.yaml}

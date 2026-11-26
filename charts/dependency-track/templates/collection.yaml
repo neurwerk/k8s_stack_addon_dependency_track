@@ -1,0 +1,181 @@
+{{- $dt := .Values.dependencyTrack }}
+{{- $scan := $dt.collection }}
+{{- if and $dt.enabled $scan.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dependency-track-collector
+automountServiceAccountToken: false
+{{- if $scan.discoverRunningImages }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dependency-track-image-inventory
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dependency-track-image-inventory
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dependency-track-image-inventory
+subjects:
+  - kind: ServiceAccount
+    name: dependency-track-collector
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dependency-track-collection
+data:
+  collection.json: |
+    {{- dict "url" "http://dependency-track-api:8080" "repositories" $scan.repositories "images" $scan.images "discoverRunningImages" $scan.discoverRunningImages "syftImage" $scan.syftImage "cdxgenImage" $scan.cdxgenImage "toolingImage" $dt.toolingImage | toPrettyJson | nindent 4 }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dependency-track-coverage
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ $dt.persistence.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ $scan.stateSize }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dependency-track-collection
+spec:
+  schedule: {{ $scan.schedule | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400
+      backoffLimit: 0
+      template:
+        metadata:
+          labels: {app.kubernetes.io/name: dependency-track, app.kubernetes.io/component: collector}
+        spec:
+          serviceAccountName: dependency-track-collector
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile: {type: RuntimeDefault}
+          initContainers:
+            - name: stage
+              image: {{ $dt.toolingImage | quote }}
+              command: [dependency-track-stage]
+              securityContext: &security
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources: {{ toJson $scan.resources }}
+              volumeMounts:
+                - {name: work, mountPath: /work}
+            - name: prepare
+              image: {{ $dt.toolingImage | quote }}
+              command: [dependency-track-collect, prepare]
+              securityContext: *security
+              resources: {{ toJson $scan.resources }}
+              volumeMounts:
+                - {name: work, mountPath: /work}
+                - {name: tmp, mountPath: /tmp}
+                - {name: state, mountPath: /state, readOnly: true}
+                - {name: config, mountPath: /config, readOnly: true}
+                {{- if $scan.discoverRunningImages }}
+                - {name: api-access, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
+                {{- end }}
+                {{- if $scan.githubSecret }}
+                - {name: github, mountPath: /github, readOnly: true}
+                {{- end }}
+            - name: syft
+              image: {{ $scan.syftImage | quote }}
+              command: [/bin/sh, /work/payloads/scan-images.sh]
+              securityContext: *security
+              resources: {{ toJson $scan.resources }}
+              env:
+                - {name: HOME, value: /tmp}
+                - {name: SYFT_CHECK_FOR_APP_UPDATE, value: "false"}
+                - {name: SYFT_REGISTRY_AUTH_AUTHORITY, value: ""}
+                {{- if $scan.registrySecret }}
+                - {name: DOCKER_CONFIG, value: /registry}
+                {{- end }}
+              volumeMounts:
+                - {name: work, mountPath: /work}
+                - {name: tmp, mountPath: /tmp}
+                {{- if $scan.registrySecret }}
+                - {name: registry, mountPath: /registry, readOnly: true}
+                {{- end }}
+            - name: cdxgen
+              image: {{ $scan.cdxgenImage | quote }}
+              command: [node, /work/payloads/scan-repositories.mjs]
+              securityContext: *security
+              resources: {{ toJson $scan.resources }}
+              env:
+                - {name: HOME, value: /tmp}
+                - {name: NODE_COMPILE_CACHE, value: /tmp/node-cache}
+              volumeMounts:
+                - {name: work, mountPath: /work}
+                - {name: tmp, mountPath: /tmp}
+          containers:
+            - name: upload
+              image: {{ $dt.toolingImage | quote }}
+              command: [dependency-track-collect, upload]
+              securityContext: *security
+              resources: {{ toJson $scan.resources }}
+              volumeMounts:
+                - {name: work, mountPath: /work, readOnly: true}
+                - {name: state, mountPath: /state}
+                - {name: config, mountPath: /config, readOnly: true}
+                - {name: collector, mountPath: /collector, readOnly: true}
+          volumes:
+            - name: work
+              emptyDir: {sizeLimit: {{ $scan.workSize }}}
+            - name: tmp
+              emptyDir: {sizeLimit: 4Gi}
+            - name: state
+              persistentVolumeClaim: {claimName: dependency-track-coverage}
+            - name: config
+              configMap: {name: dependency-track-collection}
+            - name: collector
+              secret: {secretName: {{ $dt.collectorSecret }}}
+            {{- if $scan.discoverRunningImages }}
+            - name: api-access
+              projected:
+                sources:
+                  - serviceAccountToken: {path: token, expirationSeconds: 3600}
+                  - configMap:
+                      name: kube-root-ca.crt
+                      items: [{key: ca.crt, path: ca.crt}]
+                  - downwardAPI:
+                      items: [{path: namespace, fieldRef: {fieldPath: metadata.namespace}}]
+            {{- end }}
+            {{- if $scan.githubSecret }}
+            - name: github
+              secret: {secretName: {{ $scan.githubSecret }}}
+            {{- end }}
+            {{- if $scan.registrySecret }}
+            - name: registry
+              secret:
+                secretName: {{ $scan.registrySecret }}
+                items: [{key: .dockerconfigjson, path: config.json}]
+            {{- end }}
+{{- end }}

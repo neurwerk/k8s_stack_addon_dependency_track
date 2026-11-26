@@ -1,0 +1,8 @@
+dependencyTrack:
+  enabled: false
+  hostname: ""
+externalGateway:
+  enabled: false
+  port: 443
+publicCertificates:
+  useProduction: false

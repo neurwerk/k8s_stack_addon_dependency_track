@@ -1,0 +1,6 @@
+apiVersion: v2
+name: dependency-track-routing
+description: TLS routing enabled only after local credential initialization succeeds
+type: application
+version: 0.1.0
+appVersion: "5.2.2"

@@ -1,0 +1,24 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: dependency-track
+  namespace: dependency-track
+spec:
+  releaseName: dependency-track
+  interval: 5m
+  timeout: 30m
+  install:
+    strategy: {name: RetryOnFailure, retryInterval: 1m}
+  upgrade:
+    strategy: {name: RetryOnFailure, retryInterval: 1m}
+  dependsOn:
+    - {name: dependency-track-postgres, namespace: infra-postgres-operations}
+  chart:
+    spec:
+      chart: ./charts/dependency-track
+      sourceRef: {kind: GitRepository, name: dependency-track-addon, namespace: flux-system}
+      interval: 1m
+  valuesFrom:
+    - {kind: ConfigMap, name: dependency-track-app-defaults, valuesKey: values.yaml}
+    - {kind: ConfigMap, name: client-values, valuesKey: values.yaml}
+    - {kind: ConfigMap, name: dependency-track-product-values, valuesKey: values.yaml}

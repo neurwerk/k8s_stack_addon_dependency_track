@@ -1,0 +1,191 @@
+{{- if .Values.dependencyTrack.enabled }}
+{{- $dt := .Values.dependencyTrack }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dependency-track
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dependency-track-data
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ $dt.persistence.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ $dt.persistence.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dependency-track-api
+  labels: {app.kubernetes.io/name: dependency-track, app.kubernetes.io/component: api}
+  annotations:
+    secret.reloader.stakater.com/reload: {{ printf "%s,%s" $dt.database.secret $dt.runtimeSecret | quote }}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: dependency-track, app.kubernetes.io/component: api}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: dependency-track, app.kubernetes.io/component: api}
+    spec:
+      serviceAccountName: dependency-track
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: api
+          image: {{ $dt.apiImage | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: management, containerPort: 9000}
+          env:
+            - {name: DT_DATASOURCE_URL, value: {{ $dt.database.url | quote }}}
+            - {name: DT_DATASOURCE_USERNAME, value: {{ $dt.database.user | quote }}}
+            - {name: DT_DATASOURCE_PASSWORD, value: '${file::/database/password}'}
+            - {name: DT_DATASOURCE_POOL_MAX_SIZE, value: "10"}
+            - {name: DT_SECRET_MANAGEMENT_DATABASE_KEK, value: '${file::/runtime/kek}'}
+            - {name: DT_DATA_DIRECTORY, value: /data}
+            - {name: DT_OIDC_ENABLED, value: "false"}
+          resources:
+            {{- toYaml $dt.apiResources | nindent 12 }}
+          startupProbe:
+            httpGet: {path: /health/started, port: management}
+            periodSeconds: 10
+            failureThreshold: 180
+          readinessProbe:
+            httpGet: {path: /health/ready, port: management}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health/live, port: management}
+            periodSeconds: 30
+            timeoutSeconds: 5
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+            - {name: database, mountPath: /database, readOnly: true}
+            - {name: runtime, mountPath: /runtime, readOnly: true}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: dependency-track-data}
+        - name: tmp
+          emptyDir: {sizeLimit: 1Gi}
+        - name: database
+          secret:
+            secretName: {{ $dt.database.secret }}
+            items: [{key: {{ $dt.database.passwordKey }}, path: password}]
+        - name: runtime
+          secret:
+            secretName: {{ $dt.runtimeSecret }}
+            items: [{key: kek, path: kek}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dependency-track-api
+spec:
+  selector: {app.kubernetes.io/name: dependency-track, app.kubernetes.io/component: api}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dependency-track-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: dependency-track, app.kubernetes.io/component: frontend}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: dependency-track, app.kubernetes.io/component: frontend}
+    spec:
+      serviceAccountName: dependency-track
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: frontend
+          image: {{ $dt.frontendImage | quote }}
+          # Upstream renders runtime configuration into its web root at startup.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          ports: [{name: http, containerPort: 8080}]
+          env: [{name: API_BASE_URL, value: ""}]
+          resources:
+            {{- toYaml $dt.frontendResources | nindent 12 }}
+          readinessProbe:
+            httpGet: {path: /, port: http}
+          livenessProbe:
+            httpGet: {path: /, port: http}
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dependency-track-frontend
+spec:
+  selector: {app.kubernetes.io/name: dependency-track, app.kubernetes.io/component: frontend}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dependency-track-bootstrap
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  activeDeadlineSeconds: 1200
+  backoffLimit: 2
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: dependency-track, app.kubernetes.io/component: bootstrap}
+    spec:
+      serviceAccountName: dependency-track
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: bootstrap
+          image: {{ $dt.toolingImage | quote }}
+          command: [dependency-track-bootstrap]
+          env: [{name: DEPENDENCY_TRACK_URL, value: "http://dependency-track-api:8080"}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            {{- toYaml $dt.bootstrapResources | nindent 12 }}
+          volumeMounts:
+            - {name: credentials, mountPath: /credentials, readOnly: true}
+            - {name: collector, mountPath: /collector, readOnly: true}
+      volumes:
+        - name: credentials
+          secret: {secretName: {{ $dt.adminSecret }}}
+        - name: collector
+          secret: {secretName: {{ $dt.collectorSecret }}}
+{{- end }}
