@@ -1,6 +1,6 @@
 [project]
 name = "dependency-track-tooling"
-version = "0.1.0"
+version = "0.1.1"
 description = "Dependency-Track provisioning and central SBOM collection"
 requires-python = ">=3.12"
 dependencies = ["k8s-stack-tooling==0.18.3"]

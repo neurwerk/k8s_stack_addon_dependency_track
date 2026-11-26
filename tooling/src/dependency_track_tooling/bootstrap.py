@@ -56,6 +56,8 @@ def main() -> None:
             headers=headers,
             body={
                 "username": COLLECTOR,
+                "fullname": "SBOM Collector",
+                "email": "sbom-collector@example.invalid",
                 "newPassword": collector,
                 "confirmPassword": collector,
                 "forcePasswordChange": False,
@@ -63,7 +65,9 @@ def main() -> None:
             },
         )
         if status != 201:
-            raise SystemExit("Collector creation failed; existing credentials preserved")
+            raise SystemExit(
+                f"Collector creation failed (HTTP {status}); existing credentials preserved"
+            )
     for permission in PERMISSIONS:
         status, _ = request(
             f"{base}/api/v1/permission/{permission}/user/{COLLECTOR}",
