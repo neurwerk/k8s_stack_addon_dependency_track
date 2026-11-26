@@ -44,6 +44,7 @@ dependencyTrack:
     cdxgenImage: ghcr.io/cyclonedx/cdxgen:13.3.0@sha256:0e2eef6dbc92a91d037531e7e3d8190f396d84d7bf0c1029807fbdebcb53a4c8
     stateSize: 1Gi
     workSize: 10Gi
+    tempSize: 4Gi
     resources:
       requests: {cpu: 100m, memory: 512Mi}
       limits: {cpu: "2", memory: 4Gi}

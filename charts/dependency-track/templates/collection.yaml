@@ -149,7 +149,7 @@ spec:
             - name: work
               emptyDir: {sizeLimit: {{ $scan.workSize }}}
             - name: tmp
-              emptyDir: {sizeLimit: 4Gi}
+              emptyDir: {sizeLimit: {{ $scan.tempSize }}}
             - name: state
               persistentVolumeClaim: {claimName: dependency-track-coverage}
             - name: config
