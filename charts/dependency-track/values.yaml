@@ -3,7 +3,7 @@ dependencyTrack:
   hostname: ""
   apiImage: ghcr.io/dependencytrack/apiserver:5.2.2@sha256:cd5bed12ff30fd36980dbee2d6c3b177c37b99c63b60f5a5b15fbca0b31d0f38
   frontendImage: ghcr.io/dependencytrack/frontend:5.2.2@sha256:fd15b6cdc38692518a703eab0ed2867fa34e1276034cbe00773c61a9975cf719
-  toolingImage: ghcr.io/neurwerk/k8s-stack-addon-dependency-track-tooling:0.1.0@sha256:b9edc892705c04297ea61d0c9ee0fef8d775d1513d89e1033a06659dd2dca59a
+  toolingImage: ghcr.io/neurwerk/k8s-stack-addon-dependency-track-tooling:0.1.1@sha256:e944f725efac435fa93ad387cf882da056ce5e308f7425e35e9c68080275869e
   database:
     url: jdbc:postgresql://postgres-operations.infra-postgres-operations.svc:5432/dependency_track?reWriteBatchedInserts=true
     user: dependency_track
